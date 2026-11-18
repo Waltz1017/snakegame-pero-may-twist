@@ -174,6 +174,64 @@
     font-size: 11px;
     color: var(--text);
   }
+
+  /* On-screen controls (shown on phones / touch screens) */
+  .dpad {
+    --pad: 64px;
+    display: none;
+    grid-template-columns: repeat(3, var(--pad));
+    grid-template-rows: repeat(3, var(--pad));
+    gap: 8px;
+    justify-content: center;
+    margin: 18px auto 0;
+    touch-action: none;
+    -webkit-user-select: none;
+  }
+  .dpad-btn {
+    width: var(--pad);
+    height: var(--pad);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: var(--snake-head);
+    background: var(--panel);
+    border: 2px solid #2c406b;
+    border-radius: 16px;
+    box-shadow: 0 6px 0 #0b142c;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .dpad-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #0b142c; }
+  .dpad-btn.center { color: var(--accent); font-size: 18px; }
+  .dpad .up    { grid-area: 1 / 2; }
+  .dpad .left  { grid-area: 2 / 1; }
+  .dpad .right { grid-area: 2 / 3; }
+  .dpad .down  { grid-area: 3 / 2; }
+  .dpad .center { grid-area: 2 / 2; }
+
+  @media (max-width: 640px), (pointer: coarse) {
+    body { align-items: flex-start; padding: 12px 0 28px; overflow-y: auto; }
+    .dpad { display: grid; }
+    .game { width: 100%; padding: 12px; }
+    .hud { gap: 6px; margin-bottom: 8px; }
+    .stat { flex: 1; min-width: 0; padding: 6px 4px; border-radius: 10px; }
+    .stat .label { font-size: 9px; letter-spacing: .06em; }
+    .stat .value { font-size: 18px; }
+    .board-wrap { padding: 6px; border-radius: 12px; }
+    .overlay { inset: 6px; padding: 12px; }
+    .overlay h1 { font-size: 26px; }
+    .overlay p { font-size: 13px; margin: 6px 0 14px; }
+    .math-card { padding: 18px; }
+    .problem { font-size: 34px; margin: 10px 0 6px; }
+    .controls-note { font-size: 11px; }
+  }
+  @media (max-height: 720px) and (max-width: 640px) {
+    .dpad { --pad: 52px; gap: 6px; margin-top: 12px; }
+    .dpad-btn { border-radius: 12px; font-size: 20px; }
+    .board-wrap { padding: 4px; }
+    .overlay { inset: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -195,6 +253,7 @@
         <button id="startBtn">Start Game</button>
         <div class="controls-note">
           Move with <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><br />
+          On a phone, use the on-screen arrow buttons below the board.<br />
           Wrong answers cost a life. Eat food to level up.
         </div>
       </div>
@@ -228,6 +287,14 @@
       </div>
     </div>
   </div>
+
+  <div class="dpad" id="dpad" aria-label="Touch controls">
+    <button class="dpad-btn up" data-dir="up" aria-label="Up">▲</button>
+    <button class="dpad-btn left" data-dir="left" aria-label="Left">◀</button>
+    <button class="dpad-btn center" id="pauseBtn" aria-label="Pause">❚❚</button>
+    <button class="dpad-btn right" data-dir="right" aria-label="Right">▶</button>
+    <button class="dpad-btn down" data-dir="down" aria-label="Down">▼</button>
+  </div>
 </div>
 
 <script>
@@ -256,6 +323,8 @@
     resumeBtn: document.getElementById('resumeBtn'),
     restartBtn: document.getElementById('restartBtn'),
     overText: document.getElementById('overText'),
+    dpad: document.getElementById('dpad'),
+    pauseBtn: document.getElementById('pauseBtn'),
   };
 
   let snake, dir, nextDir, food, score, lives, state, problem;
@@ -268,6 +337,26 @@
     w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
     W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0],
   };
+  const BUTTON_DIR = {
+    up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0],
+  };
+
+  function setDirection(nd) {
+    if (state !== 'playing') return;
+    if (snake.length > 1 && nd[0] === -dir[0] && nd[1] === -dir[1]) return;
+    nextDir = nd;
+  }
+
+  function togglePause() {
+    if (state === 'playing') {
+      state = 'paused';
+      els.pauseOverlay.classList.add('show');
+    } else if (state === 'paused') {
+      state = 'playing';
+      els.pauseOverlay.classList.remove('show');
+      lastTime = performance.now();
+    }
+  }
 
   function reset() {
     snake = [
@@ -479,15 +568,13 @@
       return;
     }
     if (e.key === ' ' || e.key === 'p' || e.key === 'P') {
-      if (state === 'playing') { state = 'paused'; els.pauseOverlay.classList.add('show'); }
-      else if (state === 'paused') { state = 'playing'; els.pauseOverlay.classList.remove('show'); lastTime = performance.now(); }
+      togglePause();
       e.preventDefault();
       return;
     }
     const nd = KEY_DIR[e.key];
     if (!nd) return;
-    if ((dir[0] === -nd[0] && dir[1] === -nd[1]) && snake.length > 1) return;
-    nextDir = nd;
+    setDirection(nd);
     e.preventDefault();
   });
 
@@ -500,13 +587,17 @@
     else wrongAnswer();
   });
 
+  els.dpad.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || !els.dpad.contains(btn)) return;
+    e.preventDefault();
+    if (btn.dataset.dir) setDirection(BUTTON_DIR[btn.dataset.dir]);
+    else if (btn.id === 'pauseBtn') togglePause();
+  });
+
   els.startBtn.addEventListener('click', startGame);
   els.restartBtn.addEventListener('click', startGame);
-  els.resumeBtn.addEventListener('click', () => {
-    state = 'playing';
-    els.pauseOverlay.classList.remove('show');
-    lastTime = performance.now();
-  });
+  els.resumeBtn.addEventListener('click', togglePause);
 
   reset();
   draw();
